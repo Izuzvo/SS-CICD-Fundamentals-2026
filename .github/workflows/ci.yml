@@ -1,0 +1,20 @@
+# Placeholder. Course 1 replaces this file.
+# The finished workflow is course-1/solution/ci.yml.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Not the pipeline yet
+        run: |
+          echo "This workflow is a placeholder."
+          echo "In Course 1 you replace it with course-1/solution/ci.yml."

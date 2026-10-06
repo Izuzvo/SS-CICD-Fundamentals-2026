@@ -1,0 +1,7 @@
+# What CI installs to run the test suite.
+# The service itself imports nothing outside the standard library, which is why
+# the Dockerfile does not install this file.
+#
+# Trivy reads this file during the `scan` job. It is the only dependency
+# manifest in the repository, so it is the whole supply chain the scanner sees.
+pytest==8.3.5
