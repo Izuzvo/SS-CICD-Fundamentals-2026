@@ -1,0 +1,90 @@
+# Course 2 local stack.
+#
+# Two networks:
+#   ai     internal: true. No route to the internet. Ollama lives only here.
+#   egress normal bridge. n8n needs it to reach api.github.com.
+#
+# So the model can read what n8n sends it and nothing else: no published port,
+# no internet, no Docker socket, no host directory. n8n is bound to localhost,
+# and cloudflared on the host is the only inbound path.
+#
+# Load the model once, before class, with the one-shot service below:
+#   docker compose --profile setup run --rm model-pull
+
+services:
+  ollama:
+    image: ollama/ollama:0.40.0
+    container_name: course-ollama
+    restart: unless-stopped
+    mem_limit: 4g
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_CONTEXT_LENGTH: "8192"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ai
+
+  # One-shot. Not started by `up`. It is the only container that may download:
+  # it sits on the egress network, shares the model volume, and exits.
+  model-pull:
+    image: ollama/ollama:0.40.0
+    container_name: course-model-pull
+    profiles: ["setup"]
+    mem_limit: 2g
+    environment:
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:3b}
+      OLLAMA_NO_CLOUD: "1"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve > /tmp/serve.log 2>&1 &
+        until ollama list > /dev/null 2>&1; do sleep 1; done
+        ollama pull "$$OLLAMA_MODEL"
+        ollama list
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - egress
+
+  n8n:
+    image: n8nio/n8n:1.123.82
+    container_name: course-n8n
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    mem_limit: 1g
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      WEBHOOK_URL: ${WEBHOOK_URL}
+      # The Code nodes read $env and require("crypto"). Both variables are
+      # passed through to the internal task runner that executes them.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      GENERIC_TIMEZONE: UTC
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:3b}
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks:
+      - ai
+      - egress
+
+networks:
+  ai:
+    internal: true
+  egress:
+
+volumes:
+  n8n-data:
+  ollama-data:
